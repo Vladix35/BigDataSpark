@@ -1,0 +1,96 @@
+services:
+  postgres:
+    build: .
+    container_name: doc_postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mypassword
+    ports: 
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    networks:
+      - bd-network
+
+  spark-master:
+    image: jupyter/all-spark-notebook:latest
+    container_name: spark-master
+    hostname: spark-master
+    command: /usr/local/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+      - PYSPARK_PYTHON=python3
+      - PYSPARK_DRIVER_PYTHON=python3
+    ports:
+      - '8080:8080'
+      - '7077:7077'
+    volumes:
+      - ./jars:/opt/spark/jars
+    networks:
+      - bd-network
+
+  spark-worker:
+    image: jupyter/all-spark-notebook:latest
+    container_name: spark-worker
+    hostname: spark-worker
+    user: root
+    command: /usr/local/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      - SPARK_WORKER_DIR=/tmp/spark-work
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_WEBUI_PORT=8081
+    ports:
+      - '8081:8081'
+    volumes:
+      - ./jars:/opt/spark/jars
+    depends_on:
+      - spark-master
+    networks:
+      - bd-network
+  
+  jupyter:
+    image: jupyter/all-spark-notebook:latest
+    container_name: jupiter
+    environment:
+      - JUPYTER_TOKEN=mypassword
+      - JUPYTER_ENABLE_LAB=yes
+      - PYSPARK_PYTHON=python3
+      - PYSPARK_DRIVER_PYTHON=python3
+      - SPARK_JARS=/opt/spark/jars/postgresql-42.6.0.jar,/opt/spark/jars/clickhouse-jdbc-0.6.3-all.jar,/opt/spark/jars/clickhouse-spark-runtime-3.5_2.13-0.8.1.jar
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./jars:/opt/spark/jars
+    depends_on:
+      - spark-master
+      - postgres
+      - clickhouse
+    networks:
+      - bd-network
+  
+  clickhouse:
+    image: yandex/clickhouse-server
+    container_name: clickhouse-server
+    environment:
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+    ports: 
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - bd-network
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+
+networks:
+  bd-network:
+    driver: bridge
